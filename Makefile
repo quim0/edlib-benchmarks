@@ -1,7 +1,7 @@
 CXX=g++
 CPPFLAGS=-I edlib/include -std=c++0x -lpthread
 edlib-benchmarks: edlib-benchmarks.cpp edlib/src/edlib.cpp
-	$(CXX) $^ -o $@ $(CPPFLAGS)
+	$(CXX) $^ -o $@ $(CPPFLAGS) -O3
 edlib-benchmarks-dbg: edlib-benchmarks.cpp edlib/src/edlib.cpp
 	$(CXX) $^ -o $@ $(CPPFLAGS) -ggdb
 clean:

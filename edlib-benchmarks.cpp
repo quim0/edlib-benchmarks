@@ -37,8 +37,8 @@ const char *USAGE_STR = "Usage:\n"
 
 class Sequences {
 public:
-    int seq_len;
-    int num_alignments;
+    size_t seq_len;
+    size_t num_alignments;
     char* sequences_buffer;
     int* sequences_len;
 
@@ -50,8 +50,8 @@ public:
                   << "\tSequence length: " << seq_len << std::endl
                   << "\tNumber of alignments: " << num_alignments << std::endl;
 
-        size_t seq_bytes_to_alloc = (num_alignments * seq_len * 2);
-        std::cout << "Allocating " << (seq_bytes_to_alloc / (1<<20))
+        std::size_t seq_bytes_to_alloc = ((size_t)num_alignments * (size_t)seq_len * 2L);
+        std::cout << "Allocating " << (seq_bytes_to_alloc / (1 << 20))
                   << "MiB of memory to store the sequences" << std::endl;
         try {
             this->sequences_buffer = new char[seq_bytes_to_alloc];
@@ -59,8 +59,8 @@ public:
             std::cerr << "bad_alloc detected: " << exception.what();
             exit(-1);
         }
-        memset(this->sequences_buffer, 0, num_alignments * seq_len * 2);
-        this->sequences_len = new int[num_alignments * 2];
+        memset(this->sequences_buffer, 0, seq_bytes_to_alloc);
+        this->sequences_len = new int[(size_t)num_alignments * 2L];
 
         std::ifstream file(filepath, std::ios::binary | std::ios::ate);
         if (file.fail()) {
@@ -75,9 +75,9 @@ public:
         TIMER_START
 
         std::string line;
-        int sequences_read = 0;
+        size_t sequences_read = 0;
         while(std::getline(file, line) && sequences_read < (num_alignments*2)) {
-            strncpy(this->sequences_buffer + (sequences_read * seq_len),
+            strncpy(this->get_sequence(sequences_read),
                     // +1 to avoid the initial > and <
                     line.c_str() + 1,
                     seq_len);
@@ -86,14 +86,21 @@ public:
         }
 
         TIMER_STOP
-        std::cout << "Read file in " << TIMER_MS << "ms" << std::endl;
+        std::cout << "Read " << sequences_read << " sequences in " << TIMER_MS
+                  << "ms." << std::endl;
     };
 
     ~Sequences () {
         delete [] this->sequences_buffer;
+        delete [] this->sequences_len;
     }
 
-    char* get_sequence(int n) const {
+    char* get_sequence(size_t n) const {
+        // Only for debug purposes
+        //if (n >= this->num_alignments*2) {
+        //    std::cout << "Trying to read too far... n=" << n << std::endl;
+        //    return 0;
+        //}
         return this->sequences_buffer + (this->seq_len * n);
     }
 };
@@ -112,8 +119,8 @@ int worker (const Sequences* seqs, const int tid, const int num_threads) {
     for (int i=0; i<alignments_to_process; i++) {
         EdlibAlignResult result;
         EdlibAlignConfig config;
-        int seq_id_query = i*2 + initial_alignment_idx;
-        int seq_id_target = i*2 + 1 + initial_alignment_idx;
+        int seq_id_query = i*2 + initial_alignment_idx*2;
+        int seq_id_target = seq_id_query + 1;
         char* query = seqs->get_sequence(seq_id_query);
         int query_len = seqs->sequences_len[seq_id_query];
         char* target = seqs->get_sequence(seq_id_target);
