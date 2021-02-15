@@ -24,6 +24,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
+#include <pthread.h>
 #include "edlib.h"
 
 #define TIMER_START std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
@@ -116,9 +117,10 @@ int worker (const Sequences* seqs, const int tid, const int num_threads) {
               alignments_to_process << " alignments." << std::endl;
 
     int initial_alignment_idx = (seqs->num_alignments / num_threads) * tid;
+    EdlibAlignConfig config;
+    config = edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, NULL, 0);
     for (int i=0; i<alignments_to_process; i++) {
         EdlibAlignResult result;
-        EdlibAlignConfig config;
         int seq_id_query = i*2 + initial_alignment_idx*2;
         int seq_id_target = seq_id_query + 1;
         char* query = seqs->get_sequence(seq_id_query);
@@ -129,7 +131,6 @@ int worker (const Sequences* seqs, const int tid, const int num_threads) {
         //std::cout << "QUERY(" << query_len << "): " << query << std::endl;
         //std::cout << "TARGET(" << target_len << "): " << target << std::endl;
 
-        config = edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, NULL, 0);
         result = edlibAlign(query, query_len, target, target_len, config);
         edlibFreeAlignResult(result);
     }
@@ -158,15 +159,37 @@ int main (int argc, char* argv[]) {
 
     Sequences sequences(filepath, seq_size, num_alignments);
 
-    std::thread* threads_array = new std::thread[threads];
+    std::thread* threads_array = new std::thread[threads-1];
+
+    pthread_t self_thread = pthread_self();
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(0, &cpuset);
+    int rc = pthread_setaffinity_np(self_thread, sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+        std::cerr << "Error setting thread affinity for master\n" << std::endl;
+    }
 
     TIMER_START
 
-    for (int i=0; i<threads; i++) {
-        threads_array[i] = std::thread(worker, &sequences, i, threads);
+    for (int i=0; i<threads-1; i++) {
+        threads_array[i] = std::thread(worker, &sequences, i+1, threads);
+
+        // Set thread affinity
+        CPU_ZERO(&cpuset);
+        CPU_SET((i+1), &cpuset);
+        rc = pthread_setaffinity_np(threads_array[i].native_handle(),
+                                        sizeof(cpu_set_t), &cpuset);
+        if (rc != 0) {
+            std::cerr << "Error setting thread affinity for thread " << i
+                      << "\n" << std::endl;
+        }
     }
 
-    for (int i=0; i<threads; i++) {
+    // Master acts as thread 0
+    worker(&sequences, 0, threads);
+
+    for (int i=0; i<threads-1; i++) {
         threads_array[i].join();
     }
 
